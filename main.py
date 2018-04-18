@@ -11,7 +11,6 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.graphics import Line, Rectangle, Color
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.popup import Popup
 from kivy.uix.video import Video
 from kivy.uix.image import Image
 from kivy.uix.widget import Widget
@@ -21,11 +20,12 @@ from kivy.core.text import Label as CoreLabel
 
 import pandas as pd
 import math
-import objgraph
-import cProfile
-import pdb
+#import objgraph
+#import cProfile
+#import pdb
 import time
 import filetype
+from socket import *
 
 class PopupVideo(Video):
 
@@ -39,16 +39,20 @@ class PopupVideo(Video):
 
 class TimeLabel(Label):
 
-    def __init__(self, time, **args):
-        super(TimeLabel, self).__init__(**args)
+    def __init__(self, time, unit, font_name, font_size, font_color, **kwargs):
+        super(TimeLabel, self).__init__(**kwargs)
         
         self.time = time
-        self.text = str(round(time))
+        if unit == '':
+            self.unit = unit
+        else:
+            self.unit = ' ' + unit
+        self.text = str(round(time)) + self.unit
         self.center_x = 0
-        self.font_size = 35
+        self.font_size = font_size
         self.valign = 'middle'
-        self.font_name = 'Gotham-Bold.otf'
-        self.color = (0,0,0,1)
+        self.font_name = font_name
+        self.color = (font_color[0],font_color[1],font_color[2],font_color[3])
         pos_hint = {'center_y': 0.5}
                
 class Overlay(StackLayout):
@@ -100,7 +104,8 @@ class Overlay(StackLayout):
                 Color(0,0,0,0.5)
                 self.back_rect = Rectangle(pos=self.parent.parent.pos, size=self.parent.parent.size)
             # Draw overlay background
-            Color(110/255., 41/255., 141/255.)
+            col = self.options['background_color']
+            Color(col[0], col[1], col[2], col[3])
             self.rect = Rectangle(pos=self.pos, size=self.size)
             
     def make_visible(self, *args):
@@ -111,6 +116,18 @@ class Overlay(StackLayout):
         self.height =   self.title_label.height + \
                         self.content_container.height + \
                         self.dismiss_button.height
+                        
+    def on_state(self, *args):
+    
+        # Change the color of the button when it's pressed
+    
+        state = self.dismiss_button.state
+        if state == 'normal':
+            self.dismiss_button.background_color = self.options['button_normal_color']
+        else:
+            self.dismiss_button.background_color = self.options['button_down_color']
+        
+
     
     def __init__(self, options, **kwargs):
 
@@ -142,7 +159,12 @@ class Overlay(StackLayout):
                                         color = options['button_font_color'],
                                         font_name = options['button_font_name'],
                                         size_hint = (1,None),
+                                        background_normal='',
+                                        background_down='',
+                                        background_color=options['button_normal_color'],
                                         on_release=self.hide_content)
+        
+        self.dismiss_button.bind(state=self.on_state)
         self.dismiss_button.height = 2*self.dismiss_button.font_size
         self.add_widget(self.dismiss_button)
 
@@ -309,19 +331,30 @@ class Item(StackLayout):
         self.canvas.before.clear()
         with self.canvas.before:
             # Draw the connecting line
-            Color(1,1,1,1)
+            col = self.options['line_color']
+            Color(col[0], col[1], col[2], col[3])
             self.line = Line(points=[self.center_x, self.center_y, self.center_x, self.target], width=3)
             # Draw the background
             col = self.options['background_color']
-            Color(col[0], col[1], col[2])
+            Color(col[0], col[1], col[2], col[3])
             self.rect = Rectangle(pos=self.pos, size=self.size)
         
         #if self.body.texture != None:
             #self.body.texture.mag_filter = 'linear'
+            
+    def on_state(self, *args):
+    
+        # Change the color of the button when it's pressed
+    
+        state = self.more.state
+        if state == 'normal':
+            self.more.background_color = self.options['button_normal_color']
+        else:
+            self.more.background_color = self.options['button_down_color']
         
-    def __init__(self, name, time, rank, short, long, media, options, **args):
-        super(Item, self).__init__(**args)
-        
+    def __init__(self, name, time, unit, rank, short, long,
+                    media, options, **kwargs):
+        super(Item, self).__init__(**kwargs)
         self.options = options
         self.target = 0 # must be before pos   
         self.size_hint = (0.2, None)
@@ -334,8 +367,16 @@ class Item(StackLayout):
         self.text = short
         self.short = short
         self.long = long
+        if self.long == '':
+            self.no_overlay = True
+        else:
+            self.no_overlay = False
         self.title_text = name
         self.time = time
+        if unit == '':
+            self.unit = ''
+        else:
+            self.unit = ' ' + unit
         self.rank = rank
         self.media_source = media
         if media != '':
@@ -354,7 +395,7 @@ class Item(StackLayout):
         else:
             self.media_type = 'none'
                 
-        self.title = Label(text=str(round(time)),
+        self.title = Label(text=str(round(time))+self.unit,
                             size_hint=(1,None),
                             font_name=options['title_font_name'],
                             font_size=options['title_font_size'],
@@ -366,6 +407,7 @@ class Item(StackLayout):
                                         size_hint=(1,None))
         
         if self.media_type != 'image': # Display only text on main timeline
+            
             self.body_text = Label(text=self.text,
                                     font_name=options['body_font_name'],
                                     font_size=options['body_font_size'],
@@ -399,19 +441,24 @@ class Item(StackLayout):
             self.body_container.add_widget(spacer2)            
             self.body_container.add_widget(self.body_image)
             self.body_container.add_widget(spacer3)
-            
+        
         self.more = Button(text='Tap to learn more',
                             size_hint=(1,None),
                             font_name=options['button_font_name'],
                             font_size=options['button_font_size'],
                             color=options['button_font_color'],
+                            background_normal='',
+                            background_down='',
+                            background_color=options['button_normal_color'],
                             on_release=self.more_info)
         self.more.height = 2*self.more.font_size
+        self.more.bind(state=self.on_state)
                 
         self.add_widget(self.title)
         self.add_widget(self.body_container)
         self.add_widget(Label(size_hint=(1,None), height=10)) # Spacer
-        self.add_widget(self.more)
+        if not self.no_overlay: # Hide the learn more button if there's no overlay to show
+            self.add_widget(self.more)
         
         self.bind(pos=self.draw)
         
@@ -431,16 +478,7 @@ class LineWidget(Widget):
         self.pos_hint = {'center.x': 0.5, 'center_y': 0.5}
         self.bind(size=self.draw)
 
-class Timeline(FloatLayout):
-
-    # Default values
-    time_start = 1887 # The minimum time on timeline
-    time_stop = 1989 # The maximum time on the timeline
-    time_window_left = 1887 # The time of the left edge of the screen
-    time_window_right = 1989 # The time of the right edge of the screen
-    time_window_min = 5 # The least amount of time the window can show (max is bounded by the whole range)
-    time_window_size = time_window_right - time_window_left
-    
+class Timeline(FloatLayout):  
     
     items = list() # Holds the widgets for each item on the timeline
     active_items = list() # Only those widgets with opacity > 0
@@ -501,30 +539,37 @@ class Timeline(FloatLayout):
     def check_labels(self):
     
         # Rapid swiping combined with translate_label() can result in labels
-        # that are too close together.
+        # that are too close together. Zooming in/out will also misplace labels
     
         shift_list = self.labels[1:]+self.labels[:1]
         error = False
         for i in range(len(self.labels)):
-            if abs(self.labels[i].time - shift_list[i].time) < 0.17*self.time_window_size:
+            if abs(self.labels[i].time - shift_list[i].time) < 0.17*abs(self.time_window_size):
                 error = True
         if error:
             for i in range(len(self.labels)):
                 time = self.time_window_left+(2*i+1)/10.*self.time_window_size
                 self.labels[i].time = time
-                self.labels[i].text = str(round(time))
+                self.labels[i].text = str(round(time)) + self.labels[i].unit
     
     def translate_label(self, label):
         
         # Function called if label slides off the screen
         
-        if label.time > self.time_window_right:
-            label.time = self.time_window_left
-        elif label.time < self.time_window_left:
-            label.time = self.time_window_right
+        if self.reversed == 'True':
+            if label.time < self.time_window_right:
+                label.time = self.time_window_left
+            elif label.time > self.time_window_left:
+                label.time = self.time_window_right
+
+        else:        
+            if label.time > self.time_window_right:
+                label.time = self.time_window_left
+            elif label.time < self.time_window_left:
+                label.time = self.time_window_right
             
         label.center_x = (label.time - self.time_window_left)/self.time_window_size*self.width
-        label.text = str(round(label.time))
+        label.text = str(round(label.time)) + label.unit
 
         self.check_labels()
     
@@ -596,20 +641,36 @@ class Timeline(FloatLayout):
         t_per_px = self.time_window_size/self.width
         item_half_size = self.width*0.1*t_per_px
         
-        if temp_left > self.time_start - item_half_size and\
-        temp_right < self.time_stop+item_half_size: # Not outside the bounds
-            # Update the timeline parameters
-            self.time_window_left = temp_left
-            self.time_window_right = temp_right
-            self.time_window_size = self.time_window_right - self.time_window_left
-            # Cull items not on or near the screen to improve performance
-            bound_left = self.time_window_left - self.time_window_size/2.
-            bound_right = self.time_window_right + self.time_window_size/2.
-            self.active_items = list()
-            for item in self.items:
-                if bound_left < item.time < bound_right and item.opacity > 0:
-                    self.active_items.append(item)
-            self.position()
+        if self.reversed == 'True':
+            if temp_left < self.time_start - item_half_size and\
+            temp_right > self.time_stop+item_half_size: # Not outside the bounds
+                # Update the timeline parameters
+                self.time_window_left = temp_left
+                self.time_window_right = temp_right
+                self.time_window_size = self.time_window_right - self.time_window_left
+                # Cull items not on or near the screen to improve performance
+                bound_left = self.time_window_left - self.time_window_size/2.
+                bound_right = self.time_window_right + self.time_window_size/2.
+                self.active_items = list()
+                for item in self.items:
+                    if bound_left > item.time > bound_right and item.opacity > 0:
+                        self.active_items.append(item)
+                self.position()
+        else:        
+            if temp_left > self.time_start - item_half_size and\
+            temp_right < self.time_stop+item_half_size: # Not outside the bounds
+                # Update the timeline parameters
+                self.time_window_left = temp_left
+                self.time_window_right = temp_right
+                self.time_window_size = self.time_window_right - self.time_window_left
+                # Cull items not on or near the screen to improve performance
+                bound_left = self.time_window_left - self.time_window_size/2.
+                bound_right = self.time_window_right + self.time_window_size/2.
+                self.active_items = list()
+                for item in self.items:
+                    if bound_left < item.time < bound_right and item.opacity > 0:
+                        self.active_items.append(item)
+                self.position()
                 
     def scale_line(self, dist, center):
     
@@ -619,24 +680,47 @@ class Timeline(FloatLayout):
         dist_years = abs(self.time_window_size*dist_frac)*2 # Change factor to change scaling speed
         lean = 1 - center/self.parent.width # Fraction of distance to add to each side
         
-        if dist > 0: # Zoom out
-            temp_left = self.time_window_left - (1-lean)*dist_years
-            temp_right = self.time_window_right  + lean*dist_years
-        else: # Zoom in
-            temp_left = self.time_window_left + (1-lean)*dist_years
-            temp_right = self.time_window_right  - lean*dist_years
         
-        t_per_px = self.time_window_size/self.width
-        item_half_size = self.width*0.1*t_per_px
+        if self.reversed == 'True':
         
-        if temp_left < temp_right and \
-                temp_left > self.time_start - item_half_size and\
-                temp_right < self.time_stop+item_half_size and \
-                (temp_right - temp_left) > self.time_window_min:
-            self.time_window_left = temp_left
-            self.time_window_right = temp_right
-            self.time_window_size = self.time_window_right - self.time_window_left            
-            self.arrange_items()
+            if dist > 0: # Zoom out
+                temp_left = self.time_window_left + (1-lean)*dist_years
+                temp_right = self.time_window_right  - lean*dist_years
+            else: # Zoom in
+                temp_left = self.time_window_left - (1-lean)*dist_years
+                temp_right = self.time_window_right  + lean*dist_years
+            
+            t_per_px = self.time_window_size/self.width
+            item_half_size = self.width*0.1*t_per_px
+
+            if temp_left > temp_right and \
+                    temp_left < self.time_start - item_half_size and\
+                    temp_right > self.time_stop+item_half_size and \
+                    abs(temp_right - temp_left) > self.time_window_min:
+                self.time_window_left = temp_left
+                self.time_window_right = temp_right
+                self.time_window_size = self.time_window_right - self.time_window_left            
+                self.arrange_items()
+        else:
+        
+            if dist > 0: # Zoom out
+                temp_left = self.time_window_left - (1-lean)*dist_years
+                temp_right = self.time_window_right  + lean*dist_years
+            else: # Zoom in
+                temp_left = self.time_window_left + (1-lean)*dist_years
+                temp_right = self.time_window_right  - lean*dist_years
+            
+            t_per_px = self.time_window_size/self.width
+            item_half_size = self.width*0.1*t_per_px
+        
+            if temp_left < temp_right and \
+                    temp_left > self.time_start - item_half_size and\
+                    temp_right < self.time_stop+item_half_size and \
+                    (temp_right - temp_left) > self.time_window_min:
+                self.time_window_left = temp_left
+                self.time_window_right = temp_right
+                self.time_window_size = self.time_window_right - self.time_window_left            
+                self.arrange_items()
 
     def draw(self, *args):
     
@@ -654,11 +738,20 @@ class Timeline(FloatLayout):
     def __init__(self, options, **kwargs):
         super(FloatLayout, self).__init__(**kwargs)
 
-        app = App.get_running_app()
         self.options = options
+        self.reversed = options['reverse_time']
         self.size_hint = (1,1)
         self.center_y = self.height/2.
         
+        # Set up the timeline parameters
+        self.time_start = options['time_start'] # The earliest possible date
+        self.time_stop = options['time_stop'] # The latest possible date
+        self.time_window_left = options['time_window_left'] # Date of left edge of window
+        self.time_window_right = options['time_window_right'] # Date of right edge of window
+        self.time_window_min = options['time_window_min'] # Least amount of time the line can show
+        self.time_window_size = self.time_window_right - self.time_window_left
+        
+        # Load the background image, if there is one
         if self.options['background_source'] is not '':
             self.background_image = Image(source='media/'+self.options['background_source'],
                                             size_hint=(1,1),
@@ -750,7 +843,11 @@ class ScreenManagement(ScreenManager):
                     'body_font_color': (1,1,1,1),
                     'button_font_size': 24,
                     'button_font_name': 'Roboto-Regular.ttf',
-                    'button_font_color': (1,1,1,1)}    
+                    'button_font_color': (1,1,1,1),
+                    'button_normal_color': (145./255,52./255,52./255, 1),
+                    'button_down_color': (81./255,28./255,28./255,1),
+                    'line_color': (1,1,1,1),
+                    'background_color': (52./255,75./255,145./255,1)}    
                     
     overlay_options = {'title_font_size': 28,
                         'title_font_name': 'Roboto-Bold.ttf',
@@ -760,11 +857,19 @@ class ScreenManagement(ScreenManager):
                         'body_font_color': (1,1,1,1),
                         'button_font_size': 24,
                         'button_font_name': 'Roboto-Regular.ttf',
-                        'button_font_color': (1,1,1,1)}
+                        'button_font_color': (1,1,1,1),
+                        'button_normal_color': (145./255,52./255,52./255, 1),
+                        'button_down_color': (81./255,28./255,28./255,1),
+                        'background_color': (52./255,75./255,145./255,1)}
                     
-    timeline_options = {'background_color': (0,0,0,1),
+    timeline_options = {'filename': '',
+                        'reverse_time': 'False',
+                        'background_color': (0,0,0,1),
                         'background_source': '',
                         'line_color': (1,1,1,1),
+                        'label_font_color': (0,0,0,1),
+                        'label_font_size': 35,
+                        'label_font_name': 'Roboto-Bold.ttf',
                         'title': '',
                         'title_font_size': 75,
                         'title_font_name': 'Roboto-Bold.ttf',
@@ -772,7 +877,21 @@ class ScreenManagement(ScreenManager):
                         'subtitle': '',
                         'subtitle_font_size': 75,
                         'subtitle_font_name': 'Roboto-Bold.ttf',
-                        'subtitle_font_color': (1,1,1,1)}
+                        'subtitle_font_color': (1,1,1,1),
+                        'time_start': 1900,
+                        'time_stop': 2000,
+                        'time_window_left': 1900,
+                        'time_window_right': 2000,
+                        'time_window_min': 0,
+                        'time_unit': ''}
+    
+    def check_in(self, *args):
+    
+        # Function to broadcast a UDP packet confirming that it's active
+        
+        s = socket(AF_INET, SOCK_DGRAM)
+        s.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+        s.sendto(b'timeline',  ('255.255.255.255', 12345))
     
     def setup(self):
         self.get_config()
@@ -782,133 +901,339 @@ class ScreenManagement(ScreenManager):
         
         self.add_widget(self.screen)
         Clock.schedule_once(self.populate_timeline)
-        
+        self.check_in()
+        Clock.schedule_interval(self.check_in, 60) # Once per mintue
+    
+    def set_time_range(self, value1, value2):
+    
+        # Function to set the start and stop times for the timeline
+    
+        if self.timeline_options['reverse_time'] == 'True': # Larger numbers mean older time
+            self.timeline_options['time_start'] = max(value1, value2)
+            self.timeline_options['time_stop'] = min(value1, value2)
+        else: # Larger numbers mean newer ("normal" timeline)
+            self.timeline_options['time_start'] = min(value1, value2)
+            self.timeline_options['time_stop'] = max(value1, value2)  
+            
+    def set_start_range(self, value1, value2):
+    
+        # Function to set the initial left and right edges of the screen
+    
+        if self.timeline_options['reverse_time'] == 'True': # Larger numbers mean older time
+            self.timeline_options['time_window_left'] = max(value1, value2)
+            self.timeline_options['time_window_right'] = min(value1, value2)
+        else: # Larger numbers mean newer ("normal" timeline)
+            self.timeline_options['time_window_left'] = min(value1, value2)
+            self.timeline_options['time_window_right'] = max(value1, value2)
+    
     def get_config(self):
         # Function to parse arguments from a configuration file
         # dt passed by clock. We ignore it
-
-        with open('config.conf', 'r') as f:
-            for line in f:
-
-                # Item options
-                if line[0:21].lower() == 'item_title_font_size:':
-                    self.item_options['title_font_size'] = int(line[21:].strip())
-                if line[0:21].lower() == 'item_title_font_name:': 
-                    self.item_options['title_font_name'] = line[21:].strip()
-                if line[0:22].lower() == 'item_title_font_color:': 
-                    s = line[22:].strip().split(',')
-                    self.item_options['title_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:20].lower() == 'item_body_font_size:': 
-                    self.item_options['body_font_size'] = int(line[20:].strip())
-                if line[0:20].lower() == 'item_body_font_name:': 
-                    self.item_options['body_font_name'] = line[20:].strip()
-                if line[0:21].lower() == 'item_body_font_color:': 
-                    s = line[21:].strip().split(',')
-                    self.item_options['body_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:22].lower() == 'item_button_font_size:':
-                    self.item_options['button_font_size'] = int(line[22:].strip())
-                if line[0:22].lower() == 'item_button_font_name:': 
-                    self.item_options['button_font_name'] = line[22:].strip()
-                if line[0:23].lower() == 'item_button_font_color:': 
-                    s = line[23:].strip().split(',')
-                    self.item_options['button_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:22].lower() == 'item_background_color:':
-                    s = line[22:].strip().split(',')
-                    self.item_options['background_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                # Overlay options
-                if line[0:24].lower() == 'overlay_title_font_size:':
-                    self.overlay_options['title_font_size'] = int(line[24:].strip())
-                if line[0:24].lower() == 'overlay_title_font_name:': 
-                    self.overlay_options['title_font_name'] = line[24:].strip()
-                if line[0:25].lower() == 'overlay_title_font_color:': 
-                    s = line[25:].strip().split(',')
-                    self.overlay_options['title_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:23].lower() == 'overlay_body_font_size:': 
-                    self.overlay_options['body_font_size'] = int(line[23:].strip())
-                if line[0:23].lower() == 'overlay_body_font_name:': 
-                    self.overlay_options['body_font_name'] = line[23:].strip()
-                if line[0:24].lower() == 'overlay_body_font_color:': 
-                    s = line[24:].strip().split(',')
-                    self.overlay_options['body_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:25].lower() == 'overlay_button_font_size:':
-                    self.overlay_options['button_font_size'] = int(line[25:].strip())
-                if line[0:25].lower() == 'overlay_button_font_name:': 
-                    self.overlay_options['button_font_name'] = line[25:].strip()
-                if line[0:26].lower() == 'overlay_button_font_color:': 
-                    s = line[26:].strip().split(',')
-                    self.overlay_options['button_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:25].lower() == 'overlay_background_color:':
-                    s = line[25:].strip().split(',')
-                    self.overlay_options['background_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                                                            
-                # Timeline options
-                if line[0:26].lower() == 'timeline_background_color:':
-                    s = line[26:].strip().split(',')
-                    self.timeline_options['background_color'] = (float(s[0])/255,
-                                                                    float(s[1])/255,
-                                                                    float(s[2])/255,
-                                                                    1)                
-                if line[0:20].lower() == 'timeline_line_color:':
-                    s = line[20:].strip().split(',')
-                    self.timeline_options['line_color'] = (float(s[0])/255,
-                                                                    float(s[1])/255,
-                                                                    float(s[2])/255,
-                                                                    1)
-                if line[0:26].lower() == 'timeline_background_image:':
-                    self.timeline_options['background_source'] = line[26:].strip()
-                if line[0:15].lower() == 'timeline_title:':
-                    self.timeline_options['title'] = line[15:].strip()
-                if line[0:25].lower() == 'timeline_title_font_size:':
-                    self.timeline_options['title_font_size'] = int(line[25:].strip())
-                if line[0:25].lower() == 'timeline_title_font_name:': 
-                    self.timeline_options['title_font_name'] = line[25:].strip()
-                if line[0:26].lower() == 'timeline_title_font_color:': 
-                    s = line[26:].strip().split(',')
-                    self.timeline_options['title_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
-                if line[0:18].lower() == 'timeline_subtitle:':
-                    self.timeline_options['subtitle'] = line[18:].strip()
-                if line[0:28].lower() == 'timeline_subtitle_font_size:':
-                    self.timeline_options['subtitle_font_size'] = int(line[28:].strip())
-                if line[0:28].lower() == 'timeline_title_font_name:': 
-                    self.timeline_options['subtitle_font_name'] = line[28:].strip()
-                if line[0:29].lower() == 'timeline_subtitle_font_color:': 
-                    s = line[29:].strip().split(',')
-                    self.timeline_options['subtitle_font_color'] = (float(s[0])/255,
-                                                            float(s[1])/255,
-                                                            float(s[2])/255,
-                                                            1)
         
+        options_set = list()
+
+        try:
+            with open('config.conf', 'r') as f:
+                for line in f:
+
+                    # Item options
+                    if line[0:21].lower() == 'item_title_font_size:':
+                        self.item_options['title_font_size'] = int(line[21:].strip())
+                        options_set.append('item_title_font_size:')
+                        
+                    if line[0:21].lower() == 'item_title_font_name:': 
+                        self.item_options['title_font_name'] = line[21:].strip()
+                        options_set.append('item_title_font_name:')
+                        
+                    if line[0:22].lower() == 'item_title_font_color:': 
+                        s = line[22:].strip().split(',')
+                        self.item_options['title_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('item_title_font_color:')
+                                                                
+                    if line[0:20].lower() == 'item_body_font_size:': 
+                        self.item_options['body_font_size'] = int(line[20:].strip())
+                        options_set.append('item_body_font_size:')
+                        
+                    if line[0:20].lower() == 'item_body_font_name:': 
+                        self.item_options['body_font_name'] = line[20:].strip()
+                        options_set.append('item_body_font_name:')
+                        
+                    if line[0:21].lower() == 'item_body_font_color:': 
+                        s = line[21:].strip().split(',')
+                        self.item_options['body_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('item_body_font_color:')
+                                                                
+                    if line[0:22].lower() == 'item_button_font_size:':
+                        self.item_options['button_font_size'] = int(line[22:].strip())
+                        options_set.append('item_button_font_size:')
+                        
+                    if line[0:22].lower() == 'item_button_font_name:': 
+                        self.item_options['button_font_name'] = line[22:].strip()
+                        options_set.append('item_button_font_size:')
+                        
+                    if line[0:23].lower() == 'item_button_font_color:': 
+                        s = line[23:].strip().split(',')
+                        self.item_options['button_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)  
+                        options_set.append('item_button_font_color:')
+                                                                
+                    if line[0:25].lower() == 'item_button_normal_color:': 
+                        s = line[25:].strip().split(',')
+                        self.item_options['button_normal_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)   
+                        options_set.append('item_button_normal_color:')
+                                                                
+                    if line[0:23].lower() == 'item_button_down_color:': 
+                        s = line[23:].strip().split(',')
+                        self.item_options['button_down_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('item_button_down_color:')
+                                                                
+                    if line[0:22].lower() == 'item_background_color:':
+                        s = line[22:].strip().split(',')
+                        self.item_options['background_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('item_background_color:')
+                                                                
+                    # Overlay options
+                    if line[0:24].lower() == 'overlay_title_font_size:':
+                        self.overlay_options['title_font_size'] = int(line[24:].strip())
+                        options_set.append('overlay_title_font_size:')
+                        
+                    if line[0:24].lower() == 'overlay_title_font_name:': 
+                        self.overlay_options['title_font_name'] = line[24:].strip()
+                        options_set.append('overlay_title_font_name:')
+                        
+                    if line[0:25].lower() == 'overlay_title_font_color:': 
+                        s = line[25:].strip().split(',')
+                        self.overlay_options['title_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('overlay_title_font_color:')
+                                                                
+                    if line[0:23].lower() == 'overlay_body_font_size:': 
+                        self.overlay_options['body_font_size'] = int(line[23:].strip())
+                        options_set.append('overlay_body_font_size:')
+                        
+                    if line[0:23].lower() == 'overlay_body_font_name:': 
+                        self.overlay_options['body_font_name'] = line[23:].strip()
+                        options_set.append('overlay_body_font_name:')
+                        
+                    if line[0:24].lower() == 'overlay_body_font_color:': 
+                        s = line[24:].strip().split(',')
+                        self.overlay_options['body_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('overlay_body_font_color:')
+                                                                
+                    if line[0:25].lower() == 'overlay_button_font_size:':
+                        self.overlay_options['button_font_size'] = int(line[25:].strip())
+                        options_set.append('overlay_button_font_size:')
+                        
+                    if line[0:25].lower() == 'overlay_button_font_name:': 
+                        self.overlay_options['button_font_name'] = line[25:].strip()
+                        options_set.append('overlay_button_font_name:')
+                        
+                    if line[0:26].lower() == 'overlay_button_font_color:': 
+                        s = line[26:].strip().split(',')
+                        self.overlay_options['button_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('overlay_button_font_color:')
+                                                                
+                    if line[0:28].lower() == 'overlay_button_normal_color:': 
+                        s = line[28:].strip().split(',')
+                        self.overlay_options['button_normal_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)  
+                        options_set.append('overlay_button_normal_color:')
+                                                                
+                    if line[0:26].lower() == 'overlay_button_down_color:': 
+                        s = line[26:].strip().split(',')
+                        self.overlay_options['button_down_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('overlay_button_down_color:')
+                                                                
+                    if line[0:25].lower() == 'overlay_background_color:':
+                        s = line[25:].strip().split(',')
+                        self.overlay_options['background_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('overlay_background_color:')
+                                                                
+                    # Timeline options
+                    if line[0:9].lower() == 'filename:':
+                        self.timeline_options['filename'] = line[9:].strip()
+                        options_set.append('filename:')
+                        
+                    if line[0:13].lower() == 'reverse_time:':
+                        self.timeline_options['reverse_time'] = line[13:].strip()
+                        self.set_time_range(self.timeline_options['time_start'],
+                                            self.timeline_options['time_stop'])
+                        self.set_start_range(self.timeline_options['time_window_left'],
+                                            self.timeline_options['time_window_right']) 
+                        options_set.append('reverse_time:')
+                                            
+                    if line[0:26].lower() == 'timeline_background_color:':
+                        s = line[26:].strip().split(',')
+                        self.timeline_options['background_color'] = (float(s[0])/255,
+                                                                        float(s[1])/255,
+                                                                        float(s[2])/255,
+                                                                        1)  
+                        options_set.append('timeline_background_color:')
+                                                                        
+                    if line[0:20].lower() == 'timeline_line_color:':
+                        s = line[20:].strip().split(',')
+                        # Color of the main line
+                        self.timeline_options['line_color'] = (float(s[0])/255,
+                                                                        float(s[1])/255,
+                                                                        float(s[2])/255,
+                                                                        1)
+                        options_set.append('timeline_line_color:')
+                                                                        
+                        # Color of the lines that connect the items
+                        self.item_options['line_color'] = (float(s[0])/255,
+                                                                        float(s[1])/255,
+                                                                        float(s[2])/255,
+                                                                        1)
+                        options_set.append('timeline_line_color:')
+                                                                        
+                    if line[0:26].lower() == 'timeline_label_font_color:':
+                        s = line[26:].strip().split(',')
+                        self.timeline_options['label_font_color'] = (float(s[0])/255,
+                                                                        float(s[1])/255,
+                                                                        float(s[2])/255,
+                                                                        1)
+                        options_set.append('timeline_label_font_color:')
+                                                                        
+                    if line[0:25].lower() == 'timeline_label_font_size:':
+                        self.timeline_options['label_font_size'] = int(line[25:].strip())
+                        options_set.append('timeline_label_font_size:')
+                        
+                    if line[0:25].lower() == 'timeline_label_font_name:':
+                        self.timeline_options['label_font_name'] = line[25:].strip()
+                        options_set.append('timeline_label_font_name:')
+                        
+                    if line[0:26].lower() == 'timeline_background_image:':
+                        self.timeline_options['background_source'] = line[26:].strip()
+                        options_set.append('timeline_background_image:')
+                        
+                    if line[0:15].lower() == 'timeline_title:':
+                        self.timeline_options['title'] = line[15:].strip()
+                        options_set.append('timeline_title:')
+                        
+                    if line[0:25].lower() == 'timeline_title_font_size:':
+                        self.timeline_options['title_font_size'] = int(line[25:].strip())
+                        options_set.append('timeline_title_font_size:')
+                        
+                    if line[0:25].lower() == 'timeline_title_font_name:': 
+                        self.timeline_options['title_font_name'] = line[25:].strip()
+                        options_set.append('timeline_title_font_name:')
+                        
+                    if line[0:26].lower() == 'timeline_title_font_color:': 
+                        s = line[26:].strip().split(',')
+                        self.timeline_options['title_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('timeline_title_font_color:')
+                                                                
+                    if line[0:18].lower() == 'timeline_subtitle:':
+                        self.timeline_options['subtitle'] = line[18:].strip()
+                        options_set.append('timeline_subtitle:')
+                        
+                    if line[0:28].lower() == 'timeline_subtitle_font_size:':
+                        self.timeline_options['subtitle_font_size'] = int(line[28:].strip())
+                        options_set.append('timeline_subtitle_font_size:')
+                        
+                    if line[0:28].lower() == 'timeline_title_font_name:': 
+                        self.timeline_options['subtitle_font_name'] = line[28:].strip()
+                        options_set.append('timeline_title_font_name:')
+                        
+                    if line[0:29].lower() == 'timeline_subtitle_font_color:': 
+                        s = line[29:].strip().split(',')
+                        self.timeline_options['subtitle_font_color'] = (float(s[0])/255,
+                                                                float(s[1])/255,
+                                                                float(s[2])/255,
+                                                                1)
+                        options_set.append('timeline_subtitle_font_color:')
+                                                                
+                    if line[0:11].lower() == 'time_range:': 
+                        input = line[11:].strip()
+                        split = input.split(',')
+                        if len(split) == 2:
+                            self.set_time_range(float(split[0]), float(split[1]))
+                            options_set.append('time_range:')
+                        else:
+                            print('Error: time_range must contain two values separated by a comma')
+                        
+                    if line[0:12].lower() == 'start_range:': 
+                        input = line[12:].strip()
+                        split = input.split(',')
+                        if len(split) == 2:
+                            self.set_start_range(float(split[0]), float(split[1]))
+                            options_set.append('start_range:')
+                        else:
+                            print('Error: start_range must contain two values separated by a comma')                       
+                    if line[0:16].lower() == 'time_window_min:': 
+                        self.timeline_options['time_window_min'] = float(line[16:].strip())
+                        options_set.append('time_window_min:')
+                    if line[0:10].lower() == 'time_unit:':
+                        self.timeline_options['time_unit'] = line[10:].strip()
+                        options_set.append('time_unit:')
+
+        except FileNotFoundError:
+            print('Warning: configuration file config.conf not found')
+            
+        # Choose some best-guess settings for certain things if the user
+        # has not supplied a setting
+        
+        # Read the input table to try and make guesses from that
+        file = self.timeline_options['filename']
+        type = file.split('.')[-1].lower()
+        if type in ['xls', 'xlsx']:
+            excel = pd.ExcelFile(file)
+            tab = excel.parse(0).fillna('')
+        elif type == 'csv':
+            tab = pd.read_csv(file)
+            
         if self.timeline_options['background_source'] is not '':
             # Make background rectangle transparent to see image
             col = self.timeline_options['background_color']
             self.timeline_options['background_color'] = (col[0], col[1], col[2], 0)
+            
+        if 'time_range:' not in options_set: # try time_range = min/max of input data
+            try:
+             times = tab['Year']
+            except:
+                pass
+            else:
+                self.set_time_range(min(times), max(times))
+                
+        if 'start_range:' not in options_set: # try start_range = time_range
+            self.set_start_range(self.timeline_options['time_start'],
+                                    self.timeline_options['time_stop'])
         
     def populate_timeline(self, *args):
     
@@ -916,7 +1241,7 @@ class ScreenManagement(ScreenManager):
         # It also adds labels to the timeline and initializes the overlays for later use
     
         # Read the specified table and create items
-        file = 'Fort_Worth_music.xlsx'
+        file = self.timeline_options['filename']
         type = file.split('.')[-1].lower()
         if type in ['xls', 'xlsx']:
             excel = pd.ExcelFile(file)
@@ -933,7 +1258,9 @@ class ScreenManagement(ScreenManager):
             rank = tab['Rank'].iloc[i]
             name = tab['Name'].iloc[i].strip().replace('\\n', '\n')
             media = tab['Media'].iloc[i]
-            self.screen.timeline.add_item(Item(name, int(year), int(rank),
+            self.screen.timeline.add_item(Item(name, int(year), 
+                                            self.timeline_options['time_unit'],
+                                            int(rank),
                                             str(short), str(long), str(media),
                                             self.item_options))
         
@@ -948,7 +1275,11 @@ class ScreenManagement(ScreenManager):
         # Add time labels to the timeline
         for i in range(n_labels):
             time = self.screen.timeline.time_window_left+(2*i+1)/10.*window_size
-            self.screen.timeline.add_label(TimeLabel(time))
+            self.screen.timeline.add_label(TimeLabel(time,
+                                            self.timeline_options['time_unit'],
+                                            self.timeline_options['label_font_name'],
+                                            self.timeline_options['label_font_size'],
+                                            self.timeline_options['label_font_color']))
                
         # Perform some first-time setup for the items.
         Clock.schedule_once(self.screen.timeline.arrange_items)       
